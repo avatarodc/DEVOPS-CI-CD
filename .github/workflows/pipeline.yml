@@ -25,7 +25,7 @@ jobs:
         cd backend
         npm ci
         
-    # Tests Backend - désactivé temporairement
+    # Tests Backend
     - name: Create basic test file
       run: |
         mkdir -p backend/tests
@@ -50,7 +50,7 @@ jobs:
         cd frontend
         npm ci
         
-    # Tests Frontend - désactivé temporairement
+    # Tests Frontend
     - name: Run frontend tests
       run: |
         cd frontend
@@ -58,6 +58,22 @@ jobs:
           sed -i 's/"scripts": {/"scripts": {\n    "test": "react-scripts test --watchAll=false --passWithNoTests",/g' package.json
         fi
         CI=true npm test || true
+        
+    # Build de l'application frontend
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm run build || echo "Build skipped for now"
+        
+    # Packaging des artefacts - Utiliser v4
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-build
+        path: |
+          frontend/build
+          backend
+          !backend/node_modules
         
     # SonarQube scan - désactivé temporairement
     # - name: SonarQube Scan
@@ -67,22 +83,6 @@ jobs:
     #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     #   with:
     #     projectBaseDir: .
-        
-    # Build de l'application frontend
-    - name: Build frontend
-      run: |
-        cd frontend
-        npm run build || echo "Build skipped for now"
-        
-    # Packaging des artefacts
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: app-build
-        path: |
-          frontend/build
-          backend
-          !backend/node_modules
         
     # Création et push de l'image Docker - désactivé temporairement
     # - name: Set up Docker Buildx
