@@ -23,73 +23,112 @@ jobs:
     - name: Install backend dependencies
       run: |
         cd backend
-        npm install
+        npm ci
         
-    # Tests simulés Backend  
+    # Tests Backend
     - name: Run backend tests
       run: |
         cd backend
-        echo "Tests backend simulés avec succès"
-        exit 0
+        npm test
       
     # Installation Frontend
     - name: Install frontend dependencies
       run: |
         cd frontend
-        npm install
+        npm ci
         
-    # Tests simulés Frontend
+    # Tests Frontend
     - name: Run frontend tests
       run: |
         cd frontend
-        echo "Tests frontend simulés avec succès"
-        exit 0
+        npm test
         
-    # Vérification de la qualité logicielle (SonarQube simulé)
-    - name: Code Quality Check
-      run: |
-        echo "Analyse SonarQube simulée"
-        echo "Qualité de code: Passed"
-        echo "Couverture: 85%"
-        echo "Dette technique: Faible"
-        exit 0
+    # SonarQube scan
+    - name: SonarQube Scan
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      with:
+        projectBaseDir: .
         
-    # Build de l'application
+    # Build de l'application frontend
     - name: Build frontend
       run: |
         cd frontend
-        npm run build || echo "Build simulé avec succès" && exit 0
+        npm run build
         
-    # Packaging de l'artéfact
-    - name: Package Artifact
-      run: |
-        echo "Création du package d'application..."
-        mkdir -p artifacts
-        cd frontend
-        zip -r ../artifacts/frontend.zip build || echo "Compression simulée"
-        cd ../backend
-        zip -r ../artifacts/backend.zip . -x "node_modules/*" || echo "Compression simulée"
-        cd ..
-        echo "Artifacts packagés avec succès"
+    # Packaging des artefacts
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: app-build
+        path: |
+          frontend/build
+          backend
+          !backend/node_modules
         
-    # Création de l'image Docker simulée
-    - name: Build Docker image
-      run: |
-        echo "Construction de l'image Docker simulée"
-        # docker build -t gestion-etablissement:latest .
-        exit 0
+    # Création et push de l'image Docker
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
       
-    # Déploiement en environnement de développement (simulé)
-    - name: Deploy to Dev
-      run: |
-        echo "Deployment to Dev environment successful"
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
         
-  # Déploiement en production (simplifié)
-  deploy-prod:
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest,${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:${{ github.sha }}
+        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache
+        cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache,mode=max
+      
+  # Déploiement en environnement de développement
+  deploy-dev:
     needs: build
     runs-on: ubuntu-latest
+    environment:
+      name: development
+      url: https://dev.gestion-etablissement.example.com
+    
+    steps:
+    - name: Deploy to Dev Environment
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.DEV_HOST }}
+        username: ${{ secrets.DEV_USERNAME }}
+        key: ${{ secrets.DEV_SSH_KEY }}
+        script: |
+          cd /opt/applications/gestion-etablissement
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest
+          echo "DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest" > .env
+          docker-compose down
+          docker-compose up -d
+          docker image prune -f
+        
+  # Déploiement en production avec approbation
+  deploy-prod:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://gestion-etablissement.example.com
     
     steps:
     - name: Deploy to Production
-      run: |
-        echo "Deployment to Production environment successful"
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USERNAME }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        script: |
+          cd /opt/applications/gestion-etablissement
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:${{ github.sha }}
+          echo "DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:${{ github.sha }}" > .env
+          docker-compose down
+          docker-compose up -d
+          docker image prune -f
