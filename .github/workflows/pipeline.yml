@@ -58,16 +58,7 @@ jobs:
       run: |
         cd frontend
         CI=true npm test || true
-        
-    # Tests IHM simplifiés (pas de lancement du serveur)
-    - name: Run basic Cypress tests
-      run: |
-        cd frontend
-        # Crée un test basique qui ne dépend pas du serveur
-        mkdir -p cypress/e2e
-        echo "describe('Basic Test', () => { it('should pass', () => { expect(true).to.equal(true); }); });" > cypress/e2e/basic.cy.js
-        npx cypress run --component || true
-        
+
   # Phase de build et packaging
   build-and-package:
     name: Build et Packaging
