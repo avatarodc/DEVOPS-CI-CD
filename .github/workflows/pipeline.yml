@@ -65,7 +65,7 @@ jobs:
         cd frontend
         npm run build || echo "Build skipped for now"
         
-    # Packaging des artefacts - Utiliser v4
+    # Packaging des artefacts
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -75,7 +75,7 @@ jobs:
           backend
           !backend/node_modules
         
-    # SonarQube scan - désactivé temporairement
+    # SonarQube scan - toujours désactivé temporairement
     # - name: SonarQube Scan
     #   uses: SonarSource/sonarcloud-github-action@master
     #   env:
@@ -84,26 +84,26 @@ jobs:
     #   with:
     #     projectBaseDir: .
         
-    # Création et push de l'image Docker - désactivé temporairement
-    # - name: Set up Docker Buildx
-    #   uses: docker/setup-buildx-action@v2
+    # Création et push de l'image Docker - ACTIVÉ
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
       
-    # - name: Login to Docker Hub
-    #   uses: docker/login-action@v2
-    #   with:
-    #     username: ${{ secrets.DOCKERHUB_USERNAME }}
-    #     password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
         
-    # - name: Build and push Docker image
-    #   uses: docker/build-push-action@v4
-    #   with:
-    #     context: .
-    #     push: true
-    #     tags: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest,${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:${{ github.sha }}
-    #     cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache
-    #     cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache,mode=max
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest,${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:${{ github.sha }}
+        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache
+        cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache,mode=max
 
-  # Déploiement en environnement de développement - désactivé temporairement
+  # Déploiement en environnement de développement - toujours désactivé temporairement
   # deploy-dev:
   #   needs: build
   #   runs-on: ubuntu-latest
@@ -126,7 +126,7 @@ jobs:
   #         docker-compose up -d
   #         docker image prune -f
         
-  # Déploiement en production avec approbation - désactivé temporairement
+  # Déploiement en production avec approbation - toujours désactivé temporairement
   # deploy-prod:
   #   needs: deploy-dev
   #   runs-on: ubuntu-latest
