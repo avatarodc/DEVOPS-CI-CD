@@ -84,7 +84,7 @@ jobs:
     #   with:
     #     projectBaseDir: .
         
-    # Création et push de l'image Docker - ACTIVÉ
+    # Création et push de l'image Docker
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
       
@@ -103,28 +103,28 @@ jobs:
         cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache
         cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache,mode=max
 
-  # Déploiement en environnement de développement - toujours désactivé temporairement
-  # deploy-dev:
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   environment:
-  #     name: development
-  #     url: https://dev.gestion-etablissement.example.com
+  # Déploiement en environnement de développement - ACTIVÉ
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: development
+      url: https://dev.gestion-etablissement.example.com
     
-  #   steps:
-  #   - name: Deploy to Dev Environment
-  #     uses: appleboy/ssh-action@master
-  #     with:
-  #       host: ${{ secrets.DEV_HOST }}
-  #       username: ${{ secrets.DEV_USERNAME }}
-  #       key: ${{ secrets.DEV_SSH_KEY }}
-  #       script: |
-  #         cd /opt/applications/gestion-etablissement
-  #         docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest
-  #         echo "DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest" > .env
-  #         docker-compose down
-  #         docker-compose up -d
-  #         docker image prune -f
+    steps:
+    - name: Deploy to Dev Environment
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.DEV_HOST }}
+        username: ${{ secrets.DEV_USERNAME }}
+        key: ${{ secrets.DEV_SSH_KEY }}
+        script: |
+          cd /opt/applications/gestion-etablissement
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest
+          echo "DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest" > .env
+          docker-compose down
+          docker-compose up -d
+          docker image prune -f
         
   # Déploiement en production avec approbation - toujours désactivé temporairement
   # deploy-prod:
