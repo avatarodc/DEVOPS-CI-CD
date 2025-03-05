@@ -75,15 +75,6 @@ jobs:
           backend
           !backend/node_modules
         
-    # SonarQube scan - toujours désactivé temporairement
-    # - name: SonarQube Scan
-    #   uses: SonarSource/sonarcloud-github-action@master
-    #   env:
-    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-    #   with:
-    #     projectBaseDir: .
-        
     # Création et push de l'image Docker
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -103,48 +94,19 @@ jobs:
         cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache
         cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache,mode=max
 
-  # Déploiement en environnement de développement - ACTIVÉ
-  deploy-dev:
+  # Déploiement sur Render
+  deploy-to-render:
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: development
-      url: https://dev.gestion-etablissement.example.com
+      name: production
+      url: https://devops-ci-cd.onrender.com
     
     steps:
-    - name: Deploy to Dev Environment
-      uses: appleboy/ssh-action@master
+    - name: Deploy to Render
+      uses: JorgeLNJunior/render-deploy@v1.4.3
       with:
-        host: ${{ secrets.DEV_HOST }}
-        username: ${{ secrets.DEV_USERNAME }}
-        key: ${{ secrets.DEV_SSH_KEY }}
-        script: |
-          cd /opt/applications/gestion-etablissement
-          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest
-          echo "DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:latest" > .env
-          docker-compose down
-          docker-compose up -d
-          docker image prune -f
-        
-  # Déploiement en production avec approbation - toujours désactivé temporairement
-  # deploy-prod:
-  #   needs: deploy-dev
-  #   runs-on: ubuntu-latest
-  #   environment:
-  #     name: production
-  #     url: https://gestion-etablissement.example.com
-    
-  #   steps:
-  #   - name: Deploy to Production
-  #     uses: appleboy/ssh-action@master
-  #     with:
-  #       host: ${{ secrets.PROD_HOST }}
-  #       username: ${{ secrets.PROD_USERNAME }}
-  #       key: ${{ secrets.PROD_SSH_KEY }}
-  #       script: |
-  #         cd /opt/applications/gestion-etablissement
-  #         docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:${{ github.sha }}
-  #         echo "DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:${{ github.sha }}" > .env
-  #         docker-compose down
-  #         docker-compose up -d
-  #         docker image prune -f
+        service_id: ${{ secrets.RENDER_SERVICE_ID }}
+        api_key: ${{ secrets.RENDER_API_KEY }}
+        wait_deploy: true
+        github_token: ${{ secrets.GITHUB_TOKEN }}
