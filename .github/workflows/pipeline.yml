@@ -39,7 +39,7 @@ jobs:
     - name: Run frontend tests
       run: |
         cd frontend
-        npm test
+        npm test -- --watchAll=false
         
     # Build de l'application
     - name: Build frontend
@@ -67,12 +67,5 @@ jobs:
     steps:
     - name: Deploy to Production
       run: |
-        # Ici, vous pouvez ajouter le déploiement vers un service cloud simple comme Heroku ou Netlify
-        # Exemple avec Heroku (nécessite configuration des secrets)
-        # echo ${{ secrets.HEROKU_API_KEY }} | docker login --username=_ --password-stdin registry.heroku.com
-        # docker tag gestion-etablissement:latest registry.heroku.com/votre-app/web
-        # docker push registry.heroku.com/votre-app/web
-        # heroku container:release web --app votre-app
-        
         # Pour l'instant, simulons le déploiement
         echo "Deployment to Production environment successful"
