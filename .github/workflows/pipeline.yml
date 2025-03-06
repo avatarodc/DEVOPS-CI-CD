@@ -23,7 +23,7 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '16'
+        node-version: '18'
         
     # Installation Backend
     - name: Install backend dependencies
@@ -87,7 +87,7 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '16'
+        node-version: '18'
         
     # Installation des dépendances
     - name: Install dependencies
@@ -172,12 +172,11 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '16'
+        node-version: '18'
 
     - name: Install monitoring dependencies
       run: |
         npm install -g artillery
-        npm install -g node-prometheus-client
 
     # Collecte des métriques de performance
     - name: Run Performance Tests
