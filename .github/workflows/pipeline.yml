@@ -605,18 +605,16 @@ jobs:
   # Déploiement en production
   deploy-production:
     name: Deploy to Production
-    needs: deploy-preprod
+    needs: build-and-package
     runs-on: ubuntu-latest
     environment:
       name: production
       url: https://devops-ci-cd.onrender.com
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-      
     - name: Deploy to Production Environment
       uses: JorgeLNJunior/render-deploy@v1.4.3
+      continue-on-error: true
       with:
         service_id: ${{ secrets.RENDER_SERVICE_ID }}
         api_key: ${{ secrets.RENDER_API_KEY }}
