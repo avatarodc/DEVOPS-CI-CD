@@ -1,8 +1,5 @@
 name: CI/CD Pipeline with Monitoring
 
-# Workflow mis à jour le 6 mars 2025
-# Ajout de commentaires et préparation pour le déploiement continu
-
 on:
   push:
     branches: [ main, master ]
@@ -10,7 +7,7 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'  # Toutes les heures
 
 jobs:
   # Phase de tests et qualité
@@ -61,7 +58,7 @@ jobs:
         npm install axios
         npm install --save-dev @testing-library/jest-dom @testing-library/react @testing-library/user-event
         
-    # Tests Frontend (tests unitaires et IHM tests)
+    # Tests Frontend (tests unitaires et IHM)
     - name: Run frontend tests
       run: |
         cd frontend
@@ -109,7 +106,7 @@ jobs:
         
     # Packaging des artefacts
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: app-build
         path: |
