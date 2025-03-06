@@ -105,14 +105,18 @@ jobs:
         npm run build
         
     # Packaging des artefacts
+    - name: Prepare artifacts
+      run: |
+        mkdir -p artifacts/frontend
+        mkdir -p artifacts/backend
+        cp -r frontend/build artifacts/frontend/
+        cp -r backend artifacts/backend/
+        
     - name: Upload build artifacts
       uses: actions/upload-artifact@v3
       with:
         name: app-build
-        path: |
-          frontend/build
-          backend
-          !backend/node_modules
+        path: artifacts
         
     # Création d'une image docker
     - name: Set up Docker Buildx
