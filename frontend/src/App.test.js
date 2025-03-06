@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-// Test élémentaire qui passera toujours
-test('Vérifie que true est true', () => {
+test('renders app without crashing', () => {
+  render(<App />);
+  // Ajoutez une assertion si possible
   expect(true).toBe(true);
 });
 
