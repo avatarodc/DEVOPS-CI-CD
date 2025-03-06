@@ -5,6 +5,8 @@ const morgan = require('morgan');
 const path = require('path');
 const mongoose = require('mongoose');
 const connectDB = require('./config/db');
+const express = require('express');
+const client = require('prom-client');
 
 // Charger les variables d'environnement
 dotenv.config();
@@ -101,6 +103,20 @@ process.on('SIGTERM', () => {
       process.exit(0);
     });
   });
+});
+
+
+// Créer des compteurs pour les requêtes
+const httpRequestsTotal = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Total des requêtes HTTP',
+  labelNames: ['method', 'route', 'status']
+});
+
+// Exposer les métriques
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.end(await client.register.metrics());
 });
 
 // Export pour les tests

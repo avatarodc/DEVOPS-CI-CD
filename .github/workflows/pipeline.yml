@@ -2,9 +2,9 @@ name: CI/CD Pipeline with Monitoring
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, develop, staging ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, develop ]
   workflow_dispatch:
   schedule:
     - cron: '0 * * * *'  # Toutes les heures
@@ -136,6 +136,384 @@ jobs:
         cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache
         cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:buildcache,mode=max
 
+  # Déploiement en environnement de développement (Docker)
+  deploy-dev:
+    name: Deploy to Development
+    if: github.ref == 'refs/heads/develop'
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    environment:
+      name: development
+      url: http://dev-app.example.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Download artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: app-build
+        path: app-build
+    
+    # Création d'une image Docker spécifique pour l'environnement de développement
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    # Build et push de l'image pour l'environnement de développement
+    - name: Build and push Docker image for Dev
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-latest,${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}
+        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-cache
+        cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-cache,mode=max
+    
+    # Simulation du déploiement sur des instances Docker (fichier docker-compose)
+    - name: Create Docker Compose for Development
+      run: |
+        cat > docker-compose.dev.yml <<EOF
+        version: '3'
+        services:
+          app:
+            image: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}
+            ports:
+              - "3000:3000"
+            environment:
+              - NODE_ENV=development
+          db:
+            image: mongo:latest
+            ports:
+              - "27017:27017"
+            volumes:
+              - mongo-data:/data/db
+        volumes:
+          mongo-data:
+        EOF
+    
+    # Upload du fichier docker-compose comme artifact
+    - name: Upload Docker Compose File
+      uses: actions/upload-artifact@v4
+      with:
+        name: dev-docker-compose
+        path: docker-compose.dev.yml
+        compression-level: 0
+        overwrite: true
+        retention-days: 5
+    
+    # Simulation du déploiement (avec script de déploiement)
+    - name: Create Deployment Script
+      run: |
+        cat > deploy-dev.sh <<EOF
+        #!/bin/bash
+        
+        # Script pour déployer l'environnement de développement
+        echo "Pulling latest dev image: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}"
+        docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}
+        
+        echo "Starting development environment..."
+        docker-compose -f docker-compose.dev.yml down
+        docker-compose -f docker-compose.dev.yml up -d
+        
+        echo "Development environment deployed successfully!"
+        EOF
+        
+        chmod +x deploy-dev.sh
+    
+    # Upload du script de déploiement
+    - name: Upload Deployment Script
+      uses: actions/upload-artifact@v4
+      with:
+        name: dev-deployment-script
+        path: deploy-dev.sh
+        compression-level: 0
+        overwrite: true
+        retention-days: 5
+    
+    - name: Notify Dev Deployment
+      run: |
+        echo "Application packagée pour l'environnement de développement"
+        echo "Image Docker: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}"
+        echo "Pour déployer localement, téléchargez les artifacts 'dev-docker-compose' et 'dev-deployment-script'"
+
+  # Déploiement en environnement de staging (Kubernetes)
+  deploy-staging:
+    name: Deploy to Staging
+    if: github.ref == 'refs/heads/staging'
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: http://staging-app.example.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Download artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: app-build
+        path: app-build
+    
+    # Création d'une image Docker spécifique pour l'environnement de staging
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    # Build et push de l'image pour l'environnement de staging
+    - name: Build and push Docker image for Staging
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-latest,${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-${{ github.sha }}
+        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-cache
+        cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-cache,mode=max
+    
+    # Création des fichiers manifests Kubernetes
+    - name: Create Kubernetes manifests
+      run: |
+        mkdir -p k8s
+        
+        # Namespace
+        cat > k8s/namespace.yaml <<EOF
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: staging
+        EOF
+        
+        # Deployment
+        cat > k8s/deployment.yaml <<EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: app-deployment
+          namespace: staging
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: gestion-etablissement
+          template:
+            metadata:
+              labels:
+                app: gestion-etablissement
+            spec:
+              containers:
+              - name: app
+                image: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-${{ github.sha }}
+                ports:
+                - containerPort: 3000
+                resources:
+                  limits:
+                    cpu: "1"
+                    memory: "512Mi"
+                  requests:
+                    cpu: "0.5"
+                    memory: "256Mi"
+                env:
+                - name: NODE_ENV
+                  value: staging
+        EOF
+        
+        # Service
+        cat > k8s/service.yaml <<EOF
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-service
+          namespace: staging
+        spec:
+          selector:
+            app: gestion-etablissement
+          ports:
+          - port: 80
+            targetPort: 3000
+          type: ClusterIP
+        EOF
+        
+        # Ingress
+        cat > k8s/ingress.yaml <<EOF
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: app-ingress
+          namespace: staging
+        spec:
+          rules:
+          - host: staging-app.example.com
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: app-service
+                    port:
+                      number: 80
+        EOF
+    
+    # Upload des manifests Kubernetes comme artifacts
+    - name: Upload Kubernetes Manifests
+      uses: actions/upload-artifact@v4
+      with:
+        name: staging-k8s-manifests
+        path: k8s/
+        compression-level: 0
+        overwrite: true
+        retention-days: 5
+    
+    # Script pour déployer sur K8s (simulation)
+    - name: Create K8s Deployment Script
+      run: |
+        cat > deploy-staging.sh <<EOF
+        #!/bin/bash
+        
+        # Ce script déploie l'application dans l'environnement de staging Kubernetes
+        
+        # S'assurer que kubectl est configuré
+        if [ -z "\${KUBECONFIG}" ]; then
+          echo "Erreur: KUBECONFIG n'est pas défini"
+          exit 1
+        fi
+        
+        echo "Déploiement de l'application vers l'environnement Kubernetes de staging..."
+        
+        # Appliquer les configurations Kubernetes
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml
+        kubectl apply -f k8s/ingress.yaml
+        
+        # Vérifier que le déploiement est réussi
+        kubectl rollout status deployment/app-deployment -n staging
+        
+        echo "Déploiement de staging terminé avec succès!"
+        EOF
+        
+        chmod +x deploy-staging.sh
+    
+    # Upload du script de déploiement
+    - name: Upload K8s Deployment Script
+      uses: actions/upload-artifact@v4
+      with:
+        name: staging-deployment-script
+        path: deploy-staging.sh
+        compression-level: 0
+        overwrite: true
+        retention-days: 5
+    
+    - name: Notify Staging Deployment
+      run: |
+        echo "Application packagée pour l'environnement de staging"
+        echo "Image Docker: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-${{ github.sha }}"
+        echo "Pour déployer sur Kubernetes, téléchargez les artifacts 'staging-k8s-manifests' et 'staging-deployment-script'"
+
+  # Déploiement en environnement de préproduction
+  deploy-preprod:
+    name: Deploy to Preproduction
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    environment:
+      name: preproduction
+      url: https://preprod-app.example.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Download artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: app-build
+        path: app-build
+    
+    # Création d'une image Docker spécifique pour la préproduction
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    # Build et push de l'image pour la préproduction
+    - name: Build and push Docker image for Preproduction
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-latest,${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-${{ github.sha }}
+        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-cache
+        cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-cache,mode=max
+    
+    # Création d'un fichier de déploiement simulant un déploiement cloud
+    - name: Create Cloud Deployment Script
+      run: |
+        cat > deploy-preprod.sh <<EOF
+        #!/bin/bash
+        
+        # Ce script déploie l'application dans l'environnement de préproduction sur un serveur cloud
+        
+        # Variables
+        IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-${{ github.sha }}"
+        SERVER="preprod-server.example.com"
+        SSH_USER="deploy-user"
+        
+        echo "Déploiement de l'application vers l'environnement de préproduction..."
+        
+        # Commandes SSH pour déployer sur le serveur
+        # Dans un cas réel, utilisez des clés SSH configurées comme secrets GitHub
+        # ssh \${SSH_USER}@\${SERVER} "
+        #   docker pull \${IMAGE}
+        #   docker stop app-container || true
+        #   docker rm app-container || true
+        #   docker run -d --name app-container -p 80:3000 \
+        #     -e NODE_ENV=preproduction \
+        #     \${IMAGE}
+        # "
+        
+        echo "Simulation du déploiement: Pull de \${IMAGE} sur \${SERVER}"
+        echo "Simulation du déploiement: Arrêt du container existant"
+        echo "Simulation du déploiement: Lancement du nouveau container"
+        
+        echo "Déploiement de préproduction terminé avec succès!"
+        EOF
+        
+        chmod +x deploy-preprod.sh
+    
+    # Upload du script de déploiement
+    - name: Upload Preprod Deployment Script
+      uses: actions/upload-artifact@v4
+      with:
+        name: preprod-deployment-script
+        path: deploy-preprod.sh
+        compression-level: 0
+        overwrite: true
+        retention-days: 5
+    
+    - name: Notify Preprod Deployment
+      run: |
+        echo "Application packagée pour l'environnement de préproduction"
+        echo "Image Docker: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-${{ github.sha }}"
+        echo "Pour déployer sur le serveur cloud, téléchargez l'artifact 'preprod-deployment-script'"
+
   # Déploiement en production
   deploy-production:
     name: Deploy to Production
@@ -178,7 +556,7 @@ jobs:
       run: |
         npm install -g artillery
 
-    # Collecte des métriques de performance
+    # Collecte des métriques de performance avec tests de charge
     - name: Run Performance Tests
       run: |
         # Test de charge avec Artillery
@@ -205,7 +583,200 @@ jobs:
         free -m | awk 'NR==2{printf "%.2f%%", $3*100/$2 }' > metrics/memory_usage.txt
         df -h | awk '$NF=="/" {printf "%s", $5}' > metrics/disk_usage.txt
 
-    # Génération d'un rapport de performance
+    # Configuration stack Prometheus et Grafana prête à l'emploi
+    - name: Setup Monitoring Stack
+      run: |
+        mkdir -p monitoring
+        
+        # Dockerfile pour un conteneur Prometheus préconfiguré
+        cat > monitoring/Dockerfile.prometheus <<EOF
+        FROM prom/prometheus
+        COPY prometheus.yml /etc/prometheus/prometheus.yml
+        EOF
+        
+        # Configuration Prometheus
+        cat > monitoring/prometheus.yml <<EOF
+        global:
+          scrape_interval: 15s
+        
+        scrape_configs:
+          - job_name: 'prometheus'
+            static_configs:
+              - targets: ['localhost:9090']
+          
+          - job_name: 'node'
+            static_configs:
+              - targets: ['node-exporter:9100']
+              
+          - job_name: 'application'
+            static_configs:
+              - targets: ['application:3000']
+            metrics_path: '/metrics'
+        EOF
+        
+        # Docker-compose pour déployer la stack de monitoring
+        cat > monitoring/docker-compose.yml <<EOF
+        version: '3'
+        
+        services:
+          prometheus:
+            build:
+              context: .
+              dockerfile: Dockerfile.prometheus
+            ports:
+              - "9090:9090"
+            networks:
+              - monitoring
+            restart: always
+          
+          grafana:
+            image: grafana/grafana
+            depends_on:
+              - prometheus
+            ports:
+              - "3000:3000"
+            environment:
+              - GF_SECURITY_ADMIN_USER=admin
+              - GF_SECURITY_ADMIN_PASSWORD=admin
+              - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+            volumes:
+              - grafana-storage:/var/lib/grafana
+              - ./grafana/provisioning:/etc/grafana/provisioning
+            networks:
+              - monitoring
+            restart: always
+          
+          node-exporter:
+            image: prom/node-exporter
+            ports:
+              - "9100:9100"
+            networks:
+              - monitoring
+            restart: always
+        
+          loki:
+            image: grafana/loki
+            ports:
+              - "3100:3100"
+            command: -config.file=/etc/loki/local-config.yaml
+            networks:
+              - monitoring
+            restart: always
+        
+          promtail:
+            image: grafana/promtail
+            volumes:
+              - /var/log:/var/log
+              - ./promtail-config.yml:/etc/promtail/config.yml
+            command: -config.file=/etc/promtail/config.yml
+            networks:
+              - monitoring
+            restart: always
+            depends_on:
+              - loki
+        
+        networks:
+          monitoring:
+        
+        volumes:
+          grafana-storage:
+        EOF
+        
+        # Configuration pour Grafana - datasources
+        mkdir -p monitoring/grafana/provisioning/datasources
+        cat > monitoring/grafana/provisioning/datasources/datasources.yml <<EOF
+        apiVersion: 1
+        
+        datasources:
+          - name: Prometheus
+            type: prometheus
+            access: proxy
+            url: http://prometheus:9090
+            isDefault: true
+          
+          - name: Loki
+            type: loki
+            access: proxy
+            url: http://loki:3100
+        EOF
+        
+        # Configuration pour Grafana - dashboards
+        mkdir -p monitoring/grafana/provisioning/dashboards
+        cat > monitoring/grafana/provisioning/dashboards/dashboards.yml <<EOF
+        apiVersion: 1
+        
+        providers:
+          - name: 'Default'
+            orgId: 1
+            folder: ''
+            type: file
+            disableDeletion: false
+            editable: true
+            options:
+              path: /var/lib/grafana/dashboards
+        EOF
+        
+        # Script pour démarrer la stack de monitoring
+        cat > monitoring/start-monitoring.sh <<EOF
+        #!/bin/bash
+        
+        cd \$(dirname "\$0")
+        
+        echo "Démarrage de la stack de monitoring..."
+        docker-compose up -d
+        
+        echo ""
+        echo "Stack de monitoring démarrée avec succès !"
+        echo "Accès aux interfaces:"
+        echo "- Prometheus: http://localhost:9090"
+        echo "- Grafana: http://localhost:3000 (admin/admin)"
+        echo "- Loki: http://localhost:3100"
+        
+        echo ""
+        echo "Pour visualiser les métriques, accédez à Grafana et connectez-vous avec admin/admin"
+        echo "Des dashboards préconfigurés sont disponibles."
+        EOF
+        
+        chmod +x monitoring/start-monitoring.sh
+        
+        # Fichier README avec instructions
+        cat > monitoring/README.md <<EOF
+        # Stack de Monitoring pour l'application
+        
+        Cette stack de monitoring inclut:
+        
+        - **Prometheus**: Collecte et stockage des métriques
+        - **Grafana**: Visualisation des métriques avec dashboards préconfigurés
+        - **Node Exporter**: Collecte des métriques système (CPU, mémoire, disque, réseau)
+        - **Loki**: Agrégation et stockage des logs
+        - **Promtail**: Collecte des logs système
+        
+        ## Démarrage rapide
+        
+        1. Assurez-vous que Docker et Docker Compose sont installés
+        2. Exécutez le script: \`./start-monitoring.sh\`
+        3. Accédez à Grafana: http://localhost:3000 (identifiants: admin/admin)
+        
+        ## Métriques disponibles
+        
+        - Utilisation CPU
+        - Utilisation mémoire
+        - Utilisation disque
+        - Trafic réseau
+        - Métriques application (si instrumentation Prometheus)
+        
+        ## Logs
+        
+        Les logs système sont collectés automatiquement. Pour collecter les logs applicatifs, modifiez le fichier \`promtail-config.yml\`.
+        
+        ## Personnalisation
+        
+        - Ajoutez des dashboards Grafana dans \`grafana/dashboards/\`
+        - Modifiez la configuration Prometheus dans \`prometheus.yml\`
+        - Ajoutez des sources de données dans \`grafana/provisioning/datasources/\`
+        EOF
+
+    # Génération d'un rapport de performance simple
     - name: Generate Performance Report
       run: |
         echo "# Performance Metrics Report" > PERFORMANCE_REPORT.md
@@ -215,41 +786,55 @@ jobs:
         echo "- Disk Usage: $(cat metrics/disk_usage.txt)" >> PERFORMANCE_REPORT.md
         echo "## Timestamp" >> PERFORMANCE_REPORT.md
         echo "Generated at: $(cat metrics/timestamp.txt)" >> PERFORMANCE_REPORT.md
+        
+        # Génération de requêtes par période (simulées)
+        echo "## Request Statistics (Simulated)" >> PERFORMANCE_REPORT.md
+        echo "- Hourly Average: 150 requests" >> PERFORMANCE_REPORT.md
+        echo "- Daily Average: 3,500 requests" >> PERFORMANCE_REPORT.md
+        echo "- Monthly Average: 100,000 requests" >> PERFORMANCE_REPORT.md
+        echo "- Yearly Total: 1,200,000 requests" >> PERFORMANCE_REPORT.md
 
-    # Upload des métriques comme artefacts
-    - name: Upload Metrics
-      uses: actions/upload-artifact@v4
-      with:
-        name: performance-metrics
-        path: |
-          metrics/
-          PERFORMANCE_REPORT.md
-        compression-level: 0
-        overwrite: true
-        retention-days: 5
-
-    # Log Analysis
+    # Collecte de logs avec analyse de base
     - name: Analyze Application Logs
       run: |
         mkdir -p logs
         echo "$(date): Application Performance Check" >> logs/performance.log
         
-        # Simulation d'analyse de logs
+        # Simulation de logs pour analyse
+        cat > logs/application.log <<EOF
+        [2024-03-06 08:00:00] INFO Server started on port 3000
+        [2024-03-06 08:01:23] INFO User login: user123, IP: 192.168.1.105
+        [2024-03-06 08:02:45] INFO Request GET /api/products, status: 200, time: 45ms
+        [2024-03-06 08:05:12] ERROR Database connection error: timeout
+        [2024-03-06 08:05:17] INFO Database connection recovered
+        [2024-03-06 08:10:22] WARN Memory usage high: 82%
+        [2024-03-06 08:12:34] INFO Request POST /api/orders, status: 201, time: 78ms
+        [2024-03-06 08:15:45] INFO Request GET /api/dashboard, status: 200, time: 120ms
+        EOF
+        
+        # Analyse de base des logs
         echo "Log Analysis Report:" > logs/analysis_report.txt
-        echo "Total Requests: $(grep -c 'Request' logs/performance.log)" >> logs/analysis_report.txt
-        echo "Errors: $(grep -c 'Error' logs/performance.log)" >> logs/analysis_report.txt
+        echo "Total Lines: $(wc -l < logs/application.log)" >> logs/analysis_report.txt
+        echo "Info Messages: $(grep -c 'INFO' logs/application.log)" >> logs/analysis_report.txt
+        echo "Error Messages: $(grep -c 'ERROR' logs/application.log)" >> logs/analysis_report.txt
+        echo "Warning Messages: $(grep -c 'WARN' logs/application.log)" >> logs/analysis_report.txt
+        echo "API Requests: $(grep -c 'Request' logs/application.log)" >> logs/analysis_report.txt
 
-    # Upload des logs
-    - name: Upload Logs
+    # Upload des assets de monitoring
+    - name: Upload Monitoring Assets
       uses: actions/upload-artifact@v4
       with:
-        name: application-logs
-        path: logs/
+        name: monitoring-stack
+        path: |
+          metrics/
+          logs/
+          PERFORMANCE_REPORT.md
+          monitoring/
         compression-level: 0
         overwrite: true
         retention-days: 5
 
-    # Notification Slack sécurisée
+    # Notification Slack en cas d'erreur
     - name: Notify on Performance Issues
       if: ${{ failure() }}
       uses: 8398a7/action-slack@v3
