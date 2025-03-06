@@ -1,13 +1,10 @@
-name: CI/CD Pipeline with Monitoring
+name: CI/CD Pipeline
 
 on:
   push:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:
-  schedule:
-    - cron: '0 * * * *'  # Toutes les heures
 
 jobs:
   # Phase de tests et qualité
@@ -155,97 +152,3 @@ jobs:
       run: |
         echo "Application déployée avec succès sur l'environnement de production"
         echo "URL: https://devops-ci-cd.onrender.com"
-
-  # Phase de monitoring et performance
-  performance-monitoring:
-    name: Performance Monitoring
-    needs: deploy-production
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '16'
-
-    - name: Install monitoring dependencies
-      run: |
-        npm install -g artillery
-        npm install -g node-prometheus-client
-
-    # Collecte des métriques de performance
-    - name: Run Performance Tests
-      run: |
-        # Test de charge avec Artillery
-        artillery quick --count 50 --num 20 https://devops-ci-cd.onrender.com || true
-
-    # Génération de métriques système
-    - name: System Metrics Collection
-      run: |
-        echo "CPU Usage:"
-        top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1"%"}'
-        
-        echo "Memory Usage:"
-        free -m | awk 'NR==2{printf "%.2f%%", $3*100/$2 }'
-        
-        echo "Disk Usage:"
-        df -h | awk '$NF=="/" {printf "%s", $5}'
-
-    # Export des métriques vers un fichier
-    - name: Export Metrics
-      run: |
-        mkdir -p metrics
-        date > metrics/timestamp.txt
-        top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1"%"}' > metrics/cpu_usage.txt
-        free -m | awk 'NR==2{printf "%.2f%%", $3*100/$2 }' > metrics/memory_usage.txt
-        df -h | awk '$NF=="/" {printf "%s", $5}' > metrics/disk_usage.txt
-
-    # Génération d'un rapport de performance
-    - name: Generate Performance Report
-      run: |
-        echo "# Performance Metrics Report" > PERFORMANCE_REPORT.md
-        echo "## System Metrics" >> PERFORMANCE_REPORT.md
-        echo "- CPU Usage: $(cat metrics/cpu_usage.txt)" >> PERFORMANCE_REPORT.md
-        echo "- Memory Usage: $(cat metrics/memory_usage.txt)" >> PERFORMANCE_REPORT.md
-        echo "- Disk Usage: $(cat metrics/disk_usage.txt)" >> PERFORMANCE_REPORT.md
-        echo "## Timestamp" >> PERFORMANCE_REPORT.md
-        echo "Generated at: $(cat metrics/timestamp.txt)" >> PERFORMANCE_REPORT.md
-
-    # Upload des métriques comme artefacts
-    - name: Upload Metrics
-      uses: actions/upload-artifact@v3
-      with:
-        name: performance-metrics
-        path: |
-          metrics/
-          PERFORMANCE_REPORT.md
-
-    # Log Analysis
-    - name: Analyze Application Logs
-      run: |
-        mkdir -p logs
-        echo "$(date): Application Performance Check" >> logs/performance.log
-        
-        # Simulation d'analyse de logs
-        echo "Log Analysis Report:" > logs/analysis_report.txt
-        echo "Total Requests: $(grep -c 'Request' logs/performance.log)" >> logs/analysis_report.txt
-        echo "Errors: $(grep -c 'Error' logs/performance.log)" >> logs/analysis_report.txt
-
-    # Upload des logs
-    - name: Upload Logs
-      uses: actions/upload-artifact@v3
-      with:
-        name: application-logs
-        path: logs/
-
-    # Notification optionnelle
-    - name: Notify on Performance Issues
-      if: ${{ failure() }}
-      uses: 8398a7/action-slack@v3
-      with:
-        status: ${{ job.status }}
-        text: 🚨 Performance monitoring detected potential issues!
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
