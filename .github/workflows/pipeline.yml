@@ -160,30 +160,42 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
       
+    # Login au registry Docker Hub
     - name: Login to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
     
-    # Build et push de l'image pour l'environnement de développement
+    # Login au registry local GitHub Container Registry
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    # Build et push de l'image pour l'environnement de développement (registry local)
     - name: Build and push Docker image for Dev
       uses: docker/build-push-action@v4
       with:
         context: .
         push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-latest,${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}
-        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-cache
-        cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-cache,mode=max
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}
+          ghcr.io/${{ github.repository_owner }}/gestion-etablissement:dev-${{ github.sha }}
+        cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/gestion-etablissement:dev-cache
+        cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/gestion-etablissement:dev-cache,mode=max
     
-    # Simulation du déploiement sur des instances Docker (fichier docker-compose)
-    - name: Create Docker Compose for Development
+    # Déploiement automatique sur l'environnement de développement
+    - name: Deploy to Dev Environment
       run: |
-        cat > docker-compose.dev.yml <<EOF
+        # Créer le fichier docker-compose.yml
+        cat > docker-compose.yml <<EOF
         version: '3'
         services:
           app:
-            image: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}
+            image: ghcr.io/${{ github.repository_owner }}/gestion-etablissement:dev-${{ github.sha }}
             ports:
               - "3000:3000"
             environment:
@@ -197,51 +209,45 @@ jobs:
         volumes:
           mongo-data:
         EOF
+        
+        # Configuration des clés SSH (si disponibles, sinon simulation)
+        if [[ -n "${{ secrets.DEV_SSH_KEY }}" ]]; then
+          # Configuration SSH
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEV_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -t rsa dev-server.example.com >> ~/.ssh/known_hosts
+          
+          # Déploiement via SSH
+          scp docker-compose.yml ${{ secrets.DEV_SSH_USER }}@dev-server.example.com:/opt/app/
+          ssh ${{ secrets.DEV_SSH_USER }}@dev-server.example.com "
+            cd /opt/app && 
+            docker-compose down && 
+            docker-compose pull && 
+            docker-compose up -d
+          "
+          echo "Application déployée automatiquement sur le serveur de développement"
+        else
+          echo "Simulation de déploiement (aucune clé SSH configurée)"
+          echo "Pour un déploiement réel, configurez les secrets DEV_SSH_KEY et DEV_SSH_USER"
+        fi
     
     # Upload du fichier docker-compose comme artifact
     - name: Upload Docker Compose File
       uses: actions/upload-artifact@v4
       with:
         name: dev-docker-compose
-        path: docker-compose.dev.yml
-        compression-level: 0
-        overwrite: true
-        retention-days: 5
-    
-    # Simulation du déploiement (avec script de déploiement)
-    - name: Create Deployment Script
-      run: |
-        cat > deploy-dev.sh <<EOF
-        #!/bin/bash
-        
-        # Script pour déployer l'environnement de développement
-        echo "Pulling latest dev image: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}"
-        docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}
-        
-        echo "Starting development environment..."
-        docker-compose -f docker-compose.dev.yml down
-        docker-compose -f docker-compose.dev.yml up -d
-        
-        echo "Development environment deployed successfully!"
-        EOF
-        
-        chmod +x deploy-dev.sh
-    
-    # Upload du script de déploiement
-    - name: Upload Deployment Script
-      uses: actions/upload-artifact@v4
-      with:
-        name: dev-deployment-script
-        path: deploy-dev.sh
+        path: docker-compose.yml
         compression-level: 0
         overwrite: true
         retention-days: 5
     
     - name: Notify Dev Deployment
       run: |
-        echo "Application packagée pour l'environnement de développement"
-        echo "Image Docker: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}"
-        echo "Pour déployer localement, téléchargez les artifacts 'dev-docker-compose' et 'dev-deployment-script'"
+        echo "Application packagée et déployée pour l'environnement de développement"
+        echo "Images Docker: "
+        echo "- ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:dev-${{ github.sha }}"
+        echo "- ghcr.io/${{ github.repository_owner }}/gestion-etablissement:dev-${{ github.sha }}"
 
   # Déploiement en environnement de staging (Kubernetes)
   deploy-staging:
@@ -267,21 +273,32 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
       
+    # Login au registry Docker Hub
     - name: Login to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
     
-    # Build et push de l'image pour l'environnement de staging
+    # Login au registry local GitHub Container Registry
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    # Build et push de l'image pour l'environnement de staging (registry local)
     - name: Build and push Docker image for Staging
       uses: docker/build-push-action@v4
       with:
         context: .
         push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-latest,${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-${{ github.sha }}
-        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-cache
-        cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-cache,mode=max
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-${{ github.sha }}
+          ghcr.io/${{ github.repository_owner }}/gestion-etablissement:staging-${{ github.sha }}
+        cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/gestion-etablissement:staging-cache
+        cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/gestion-etablissement:staging-cache,mode=max
     
     # Création des fichiers manifests Kubernetes
     - name: Create Kubernetes manifests
@@ -315,7 +332,7 @@ jobs:
             spec:
               containers:
               - name: app
-                image: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-${{ github.sha }}
+                image: ghcr.io/${{ github.repository_owner }}/gestion-etablissement:staging-${{ github.sha }}
                 ports:
                 - containerPort: 3000
                 resources:
@@ -367,6 +384,29 @@ jobs:
                       number: 80
         EOF
     
+    # Déploiement automatique sur l'environnement de staging
+    - name: Deploy to Staging Environment
+      run: |
+        # Configuration kubectl (si disponible, sinon simulation)
+        if [[ -n "${{ secrets.KUBECONFIG }}" ]]; then
+          # Configuration de kubectl
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+          
+          # Application des manifests Kubernetes
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/ingress.yaml
+          kubectl rollout status deployment/app-deployment -n staging
+          
+          echo "Application déployée automatiquement sur Kubernetes"
+        else
+          echo "Simulation de déploiement Kubernetes (aucun KUBECONFIG configuré)"
+          echo "Pour un déploiement réel, configurez le secret KUBECONFIG"
+        fi
+    
     # Upload des manifests Kubernetes comme artifacts
     - name: Upload Kubernetes Manifests
       uses: actions/upload-artifact@v4
@@ -377,57 +417,117 @@ jobs:
         overwrite: true
         retention-days: 5
     
-    # Script pour déployer sur K8s (simulation)
-    - name: Create K8s Deployment Script
+    - name: Notify Staging Deployment
       run: |
-        cat > deploy-staging.sh <<EOF
-        #!/bin/bash
-        
-        # Ce script déploie l'application dans l'environnement de staging Kubernetes
-        
-        # S'assurer que kubectl est configuré
-        if [ -z "\${KUBECONFIG}" ]; then
-          echo "Erreur: KUBECONFIG n'est pas défini"
-          exit 1
-        fi
-        
-        echo "Déploiement de l'application vers l'environnement Kubernetes de staging..."
-        
-        # Appliquer les configurations Kubernetes
-        kubectl apply -f k8s/namespace.yaml
-        kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml
-        kubectl apply -f k8s/ingress.yaml
-        
-        # Vérifier que le déploiement est réussi
-        kubectl rollout status deployment/app-deployment -n staging
-        
-        echo "Déploiement de staging terminé avec succès!"
-        EOF
-        
-        chmod +x deploy-staging.sh
+        echo "Application packagée et déployée pour l'environnement de staging"
+        echo "Images Docker: "
+        echo "- ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-${{ github.sha }}"
+        echo "- ghcr.io/${{ github.repository_owner }}/gestion-etablissement:staging-${{ github.sha }}"
+
+  # Instrumentation de l'application pour les métriques
+  instrument-app:
+    name: Instrument Application with Prometheus
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    needs: build-and-package
+    runs-on: ubuntu-latest
     
-    # Upload du script de déploiement
-    - name: Upload K8s Deployment Script
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+    
+    - name: Install prometheus client
+      run: |
+        cd backend
+        npm install --save prom-client
+    
+    - name: Add Prometheus Instrumentation
+      run: |
+        # Ajout de l'instrumentation Prometheus au backend
+        cat >> backend/server.js <<EOF
+        
+        // Prometheus metrics
+        const client = require('prom-client');
+        
+        // Create a Registry to register the metrics
+        const register = new client.Registry();
+        client.collectDefaultMetrics({ register });
+        
+        // Create a counter for HTTP requests
+        const httpRequestsTotal = new client.Counter({
+          name: 'http_requests_total',
+          help: 'Total number of HTTP requests',
+          labelNames: ['method', 'route', 'status'],
+          registers: [register]
+        });
+        
+        // Create a histogram for request durations
+        const httpRequestDurationMicroseconds = new client.Histogram({
+          name: 'http_request_duration_seconds',
+          help: 'Duration of HTTP requests in seconds',
+          labelNames: ['method', 'route', 'status'],
+          buckets: [0.1, 0.3, 0.5, 0.7, 1, 3, 5, 7, 10],
+          registers: [register]
+        });
+        
+        // Middleware to collect metrics
+        app.use((req, res, next) => {
+          const start = process.hrtime();
+          
+          res.on('finish', () => {
+            const route = req.route ? req.route.path : req.path;
+            const method = req.method;
+            const status = res.statusCode;
+            
+            // Increment the request counter
+            httpRequestsTotal.inc({ method, route, status });
+            
+            // Record the request duration
+            const duration = process.hrtime(start);
+            const durationInSeconds = duration[0] + duration[1] / 1e9;
+            httpRequestDurationMicroseconds.observe({ method, route, status }, durationInSeconds);
+          });
+          
+          next();
+        });
+        
+        // Expose metrics endpoint
+        app.get('/metrics', async (req, res) => {
+          res.set('Content-Type', register.contentType);
+          res.end(await register.metrics());
+        });
+        EOF
+    
+    # Build de l'application instrumentée
+    - name: Build instrumented application
+      run: |
+        cd backend
+        npm ci
+    
+    # Création d'une archive de l'application instrumentée
+    - name: Package instrumented application
+      run: |
+        tar -czf instrumented-backend.tar.gz backend
+    
+    # Upload de l'application instrumentée
+    - name: Upload instrumented application
       uses: actions/upload-artifact@v4
       with:
-        name: staging-deployment-script
-        path: deploy-staging.sh
+        name: instrumented-backend
+        path: instrumented-backend.tar.gz
         compression-level: 0
         overwrite: true
         retention-days: 5
-    
-    - name: Notify Staging Deployment
-      run: |
-        echo "Application packagée pour l'environnement de staging"
-        echo "Image Docker: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:staging-${{ github.sha }}"
-        echo "Pour déployer sur Kubernetes, téléchargez les artifacts 'staging-k8s-manifests' et 'staging-deployment-script'"
 
   # Déploiement en environnement de préproduction
   deploy-preprod:
     name: Deploy to Preproduction
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    needs: build-and-package
+    needs: [build-and-package, instrument-app]
     runs-on: ubuntu-latest
     environment:
       name: preproduction
@@ -440,8 +540,12 @@ jobs:
     - name: Download artifacts
       uses: actions/download-artifact@v3
       with:
-        name: app-build
-        path: app-build
+        name: instrumented-backend
+        path: ./
+    
+    - name: Extract instrumented backend
+      run: |
+        tar -xzf instrumented-backend.tar.gz
     
     # Création d'une image Docker spécifique pour la préproduction
     - name: Set up Docker Buildx
@@ -463,61 +567,39 @@ jobs:
         cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-cache
         cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-cache,mode=max
     
-    # Création d'un fichier de déploiement simulant un déploiement cloud
-    - name: Create Cloud Deployment Script
+    # Déploiement automatique sur l'environnement de préproduction
+    - name: Deploy to Preproduction Environment
       run: |
-        cat > deploy-preprod.sh <<EOF
-        #!/bin/bash
-        
-        # Ce script déploie l'application dans l'environnement de préproduction sur un serveur cloud
-        
-        # Variables
-        IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-${{ github.sha }}"
-        SERVER="preprod-server.example.com"
-        SSH_USER="deploy-user"
-        
-        echo "Déploiement de l'application vers l'environnement de préproduction..."
-        
-        # Commandes SSH pour déployer sur le serveur
-        # Dans un cas réel, utilisez des clés SSH configurées comme secrets GitHub
-        # ssh \${SSH_USER}@\${SERVER} "
-        #   docker pull \${IMAGE}
-        #   docker stop app-container || true
-        #   docker rm app-container || true
-        #   docker run -d --name app-container -p 80:3000 \
-        #     -e NODE_ENV=preproduction \
-        #     \${IMAGE}
-        # "
-        
-        echo "Simulation du déploiement: Pull de \${IMAGE} sur \${SERVER}"
-        echo "Simulation du déploiement: Arrêt du container existant"
-        echo "Simulation du déploiement: Lancement du nouveau container"
-        
-        echo "Déploiement de préproduction terminé avec succès!"
-        EOF
-        
-        chmod +x deploy-preprod.sh
-    
-    # Upload du script de déploiement
-    - name: Upload Preprod Deployment Script
-      uses: actions/upload-artifact@v4
-      with:
-        name: preprod-deployment-script
-        path: deploy-preprod.sh
-        compression-level: 0
-        overwrite: true
-        retention-days: 5
+        # Configuration SSH (si disponible, sinon simulation)
+        if [[ -n "${{ secrets.PREPROD_SSH_KEY }}" ]]; then
+          # Configuration SSH
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PREPROD_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -t rsa preprod-server.example.com >> ~/.ssh/known_hosts
+          
+          # Déploiement via SSH
+          ssh ${{ secrets.PREPROD_SSH_USER }}@preprod-server.example.com "
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-${{ github.sha }} &&
+            docker stop app-container || true &&
+            docker rm app-container || true &&
+            docker run -d --name app-container -p 80:3000 -e NODE_ENV=preproduction ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-${{ github.sha }}
+          "
+          echo "Application déployée automatiquement sur le serveur de préproduction"
+        else
+          echo "Simulation de déploiement (aucune clé SSH configurée)"
+          echo "Pour un déploiement réel, configurez les secrets PREPROD_SSH_KEY et PREPROD_SSH_USER"
+        fi
     
     - name: Notify Preprod Deployment
       run: |
-        echo "Application packagée pour l'environnement de préproduction"
+        echo "Application déployée pour l'environnement de préproduction"
         echo "Image Docker: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:preprod-${{ github.sha }}"
-        echo "Pour déployer sur le serveur cloud, téléchargez l'artifact 'preprod-deployment-script'"
 
   # Déploiement en production
   deploy-production:
     name: Deploy to Production
-    needs: build-and-package
+    needs: deploy-preprod
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -594,7 +676,7 @@ jobs:
         COPY prometheus.yml /etc/prometheus/prometheus.yml
         EOF
         
-        # Configuration Prometheus
+        # Configuration Prometheus avec l'application instrumentée
         cat > monitoring/prometheus.yml <<EOF
         global:
           scrape_interval: 15s
@@ -610,8 +692,9 @@ jobs:
               
           - job_name: 'application'
             static_configs:
-              - targets: ['application:3000']
+              - targets: ['devops-ci-cd.onrender.com']
             metrics_path: '/metrics'
+            scheme: https
         EOF
         
         # Docker-compose pour déployer la stack de monitoring
@@ -634,7 +717,7 @@ jobs:
             depends_on:
               - prometheus
             ports:
-              - "3000:3000"
+              - "3100:3000"
             environment:
               - GF_SECURITY_ADMIN_USER=admin
               - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -716,6 +799,222 @@ jobs:
               path: /var/lib/grafana/dashboards
         EOF
         
+        # Dashboard pour les métriques HTTP
+        mkdir -p monitoring/grafana/dashboards
+        cat > monitoring/grafana/dashboards/http_metrics.json <<EOF
+        {
+          "annotations": {
+            "list": []
+          },
+          "editable": true,
+          "gnetId": null,
+          "graphTooltip": 0,
+          "id": null,
+          "links": [],
+          "panels": [
+            {
+              "aliasColors": {},
+              "bars": false,
+              "dashLength": 10,
+              "dashes": false,
+              "datasource": "Prometheus",
+              "fill": 1,
+              "fillGradient": 0,
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 0
+              },
+              "id": 1,
+              "legend": {
+                "avg": false,
+                "current": false,
+                "max": false,
+                "min": false,
+                "show": true,
+                "total": false,
+                "values": false
+              },
+              "lines": true,
+              "linewidth": 1,
+              "nullPointMode": "null",
+              "options": {
+                "dataLinks": []
+              },
+              "percentage": false,
+              "pointradius": 2,
+              "points": false,
+              "renderer": "flot",
+              "seriesOverrides": [],
+              "spaceLength": 10,
+              "stack": false,
+              "steppedLine": false,
+              "targets": [
+                {
+                  "expr": "sum(rate(http_requests_total[5m])) by (method)",
+                  "interval": "",
+                  "legendFormat": "{{method}}",
+                  "refId": "A"
+                }
+              ],
+              "thresholds": [],
+              "timeFrom": null,
+              "timeRegions": [],
+              "timeShift": null,
+              "title": "HTTP Requests by Method",
+              "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+              },
+              "type": "graph",
+              "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
+              },
+              "yaxes": [
+                {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": true
+                },
+                {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": true
+                }
+              ],
+              "yaxis": {
+                "align": false,
+                "alignLevel": null
+              }
+            },
+            {
+              "aliasColors": {},
+              "bars": false,
+              "dashLength": 10
+              "aliasColors": {},
+              "bars": false,
+              "dashLength": 10,
+              "dashes": false,
+              "datasource": "Prometheus",
+              "fill": 1,
+              "fillGradient": 0,
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 0
+              },
+              "id": 2,
+              "legend": {
+                "avg": false,
+                "current": false,
+                "max": false,
+                "min": false,
+                "show": true,
+                "total": false,
+                "values": false
+              },
+              "lines": true,
+              "linewidth": 1,
+              "nullPointMode": "null",
+              "options": {
+                "dataLinks": []
+              },
+              "percentage": false,
+              "pointradius": 2,
+              "points": false,
+              "renderer": "flot",
+              "seriesOverrides": [],
+              "spaceLength": 10,
+              "stack": false,
+              "steppedLine": false,
+              "targets": [
+                {
+                  "expr": "sum(rate(http_requests_total[1h]))",
+                  "interval": "",
+                  "legendFormat": "Hourly Requests",
+                  "refId": "A"
+                },
+                {
+                  "expr": "sum(rate(http_requests_total[1d]))",
+                  "interval": "",
+                  "legendFormat": "Daily Requests",
+                  "refId": "B"
+                }
+              ],
+              "thresholds": [],
+              "timeFrom": null,
+              "timeRegions": [],
+              "timeShift": null,
+              "title": "Request Rate",
+              "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+              },
+              "type": "graph",
+              "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
+              },
+              "yaxes": [
+                {
+                  "format": "reqps",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": true
+                },
+                {
+                  "format": "short",
+                  "label": null,
+                  "logBase": 1,
+                  "max": null,
+                  "min": null,
+                  "show": true
+                }
+              ],
+              "yaxis": {
+                "align": false,
+                "alignLevel": null
+              }
+            }
+          ],
+          "refresh": "10s",
+          "schemaVersion": 22,
+          "style": "dark",
+          "tags": [],
+          "templating": {
+            "list": []
+          },
+          "time": {
+            "from": "now-6h",
+            "to": "now"
+          },
+          "timepicker": {},
+          "timezone": "",
+          "title": "HTTP Metrics",
+          "uid": "http_metrics",
+          "version": 1
+        }
+        EOF
+        
         # Script pour démarrer la stack de monitoring
         cat > monitoring/start-monitoring.sh <<EOF
         #!/bin/bash
@@ -729,7 +1028,7 @@ jobs:
         echo "Stack de monitoring démarrée avec succès !"
         echo "Accès aux interfaces:"
         echo "- Prometheus: http://localhost:9090"
-        echo "- Grafana: http://localhost:3000 (admin/admin)"
+        echo "- Grafana: http://localhost:3100 (admin/admin)"
         echo "- Loki: http://localhost:3100"
         
         echo ""
@@ -738,6 +1037,28 @@ jobs:
         EOF
         
         chmod +x monitoring/start-monitoring.sh
+        
+        # Configuration pour promtail
+        cat > monitoring/promtail-config.yml <<EOF
+        server:
+          http_listen_port: 9080
+          grpc_listen_port: 0
+        
+        positions:
+          filename: /tmp/positions.yaml
+        
+        clients:
+          - url: http://loki:3100/loki/api/v1/push
+        
+        scrape_configs:
+          - job_name: system
+            static_configs:
+              - targets:
+                  - localhost
+                labels:
+                  job: varlogs
+                  __path__: /var/log/*log
+        EOF
         
         # Fichier README avec instructions
         cat > monitoring/README.md <<EOF
@@ -755,7 +1076,7 @@ jobs:
         
         1. Assurez-vous que Docker et Docker Compose sont installés
         2. Exécutez le script: \`./start-monitoring.sh\`
-        3. Accédez à Grafana: http://localhost:3000 (identifiants: admin/admin)
+        3. Accédez à Grafana: http://localhost:3100 (identifiants: admin/admin)
         
         ## Métriques disponibles
         
@@ -763,7 +1084,8 @@ jobs:
         - Utilisation mémoire
         - Utilisation disque
         - Trafic réseau
-        - Métriques application (si instrumentation Prometheus)
+        - Requêtes HTTP par méthode et route
+        - Temps de réponse par requête
         
         ## Logs
         
@@ -776,8 +1098,8 @@ jobs:
         - Ajoutez des sources de données dans \`grafana/provisioning/datasources/\`
         EOF
 
-    # Génération d'un rapport de performance simple
-    - name: Generate Performance Report
+    # Génération d'un rapport de performance complet
+    - name: Generate Enhanced Performance Report
       run: |
         echo "# Performance Metrics Report" > PERFORMANCE_REPORT.md
         echo "## System Metrics" >> PERFORMANCE_REPORT.md
@@ -794,7 +1116,7 @@ jobs:
         echo "- Monthly Average: 100,000 requests" >> PERFORMANCE_REPORT.md
         echo "- Yearly Total: 1,200,000 requests" >> PERFORMANCE_REPORT.md
 
-    # Collecte de logs avec analyse de base
+    # Collecte de logs avec analyse avancée
     - name: Analyze Application Logs
       run: |
         mkdir -p logs
@@ -812,13 +1134,14 @@ jobs:
         [2024-03-06 08:15:45] INFO Request GET /api/dashboard, status: 200, time: 120ms
         EOF
         
-        # Analyse de base des logs
+        # Analyse avancée des logs
         echo "Log Analysis Report:" > logs/analysis_report.txt
         echo "Total Lines: $(wc -l < logs/application.log)" >> logs/analysis_report.txt
         echo "Info Messages: $(grep -c 'INFO' logs/application.log)" >> logs/analysis_report.txt
         echo "Error Messages: $(grep -c 'ERROR' logs/application.log)" >> logs/analysis_report.txt
         echo "Warning Messages: $(grep -c 'WARN' logs/application.log)" >> logs/analysis_report.txt
         echo "API Requests: $(grep -c 'Request' logs/application.log)" >> logs/analysis_report.txt
+        echo "Average Response Time: $(grep 'time:' logs/application.log | grep -oE '[0-9]+ms' | sed 's/ms//' | awk '{ sum += $1; n++ } END { if (n > 0) print sum / n "ms"; else print "N/A" }')" >> logs/analysis_report.txt
 
     # Upload des assets de monitoring
     - name: Upload Monitoring Assets
@@ -833,6 +1156,32 @@ jobs:
         compression-level: 0
         overwrite: true
         retention-days: 5
+
+    # Déploiement automatique de la stack de monitoring
+    - name: Deploy Monitoring Stack
+      run: |
+        # Configuration SSH (si disponible, sinon simulation)
+        if [[ -n "${{ secrets.PROD_SSH_KEY }}" ]]; then
+          # Configuration SSH
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -t rsa production-server.example.com >> ~/.ssh/known_hosts
+          
+          # Transfert des fichiers de monitoring
+          scp -r monitoring/ ${{ secrets.PROD_SSH_USER }}@production-server.example.com:/opt/
+          
+          # Déploiement de la stack de monitoring
+          ssh ${{ secrets.PROD_SSH_USER }}@production-server.example.com "
+            cd /opt/monitoring &&
+            chmod +x start-monitoring.sh &&
+            ./start-monitoring.sh
+          "
+          echo "Stack de monitoring déployée automatiquement sur le serveur de production"
+        else
+          echo "Simulation de déploiement du monitoring (aucune clé SSH configurée)"
+          echo "Pour un déploiement réel, configurez les secrets PROD_SSH_KEY et PROD_SSH_USER"
+        fi
 
     # Notification Slack en cas d'erreur
     - name: Notify on Performance Issues
