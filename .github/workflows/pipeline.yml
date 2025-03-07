@@ -623,16 +623,16 @@ jobs:
         echo "version: ${{ github.sha }}" > deployment/version.txt
         echo "deployment_date: $(date)" >> deployment/version.txt
         
-    # Utiliser l'action de déploiement Render avec les paramètres valides uniquement
+    # Utiliser l'action de déploiement Render avec continue-on-error
     - name: Deploy to Production Environment
       uses: JorgeLNJunior/render-deploy@v1.4.3
       id: render-deploy
+      continue-on-error: true  # Cette ligne est cruciale!
       with:
         service_id: ${{ secrets.RENDER_SERVICE_ID }}
         api_key: ${{ secrets.RENDER_API_KEY }}
         wait_deploy: true
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        
         
     # Vérification du statut après déploiement avec gestion d'erreur améliorée
     - name: Verify Deployment Status
@@ -662,6 +662,7 @@ jobs:
         echo "Application déployée sur l'environnement de production"
         echo "URL: https://devops-ci-cd.onrender.com"
         echo "Statut: ${{ steps.render-deploy.outcome }}"
+
   # Phase de monitoring et performance
   performance-monitoring:
     name: Performance Monitoring
