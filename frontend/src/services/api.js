@@ -1,9 +1,13 @@
 import axios from 'axios';
 
-// Déterminer l'URL de base en fonction de l'environnement
-const baseURL = process.env.NODE_ENV === 'production'
-  ? '/api'  // En production, utiliser une URL relative au domaine actuel
-  : 'http://localhost:5000/api';  // En développement, utiliser localhost
+const isRenderHosting = window.location.hostname.includes('render.com');
+
+// Choisir l'URL de base en fonction de l'hôte
+const baseURL = isRenderHosting || window.location.hostname !== 'localhost' 
+  ? '/api'  // Sur Render ou tout autre hôte non-local
+  : 'http://localhost:5000/api';  // Uniquement en local
+
+console.log('API baseURL:', baseURL); 
 
 // Créer une instance axios préconfigurée
 const api = axios.create({
