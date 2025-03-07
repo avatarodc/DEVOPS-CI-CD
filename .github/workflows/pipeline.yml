@@ -605,27 +605,57 @@ jobs:
   # Déploiement en production
   deploy-production:
     name: Deploy to Production
-    needs: build-and-package
+    needs: deploy-preprod
     runs-on: ubuntu-latest
     environment:
       name: production
       url: https://devops-ci-cd.onrender.com
     
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    # S'assurer que l'application est correctement préparée avant déploiement
+    - name: Prepare for deployment
+      run: |
+        echo "Préparation du déploiement en production"
+        mkdir -p deployment
+        echo "version: ${{ github.sha }}" > deployment/version.txt
+        echo "deployment_date: $(date)" >> deployment/version.txt
+        
+    # Utiliser l'action de déploiement Render avec plus d'options
     - name: Deploy to Production Environment
       uses: JorgeLNJunior/render-deploy@v1.4.3
-      continue-on-error: true
+      id: render-deploy
       with:
         service_id: ${{ secrets.RENDER_SERVICE_ID }}
         api_key: ${{ secrets.RENDER_API_KEY }}
         wait_deploy: true
         github_token: ${{ secrets.GITHUB_TOKEN }}
+        retries: 5           # Nombre de tentatives si échec
+        retry_wait: 10       # Attente entre les tentatives (secondes)
+        timeout: 600         # Timeout en secondes (10 minutes)
+        
+    # Vérification du statut après déploiement
+    - name: Verify Deployment Status
+      if: always()
+      run: |
+        if [ "${{ steps.render-deploy.outcome }}" == "success" ]; then
+          echo "✅ Déploiement réussi sur Render"
+          echo "URL: https://devops-ci-cd.onrender.com"
+        else
+          echo "❌ Le déploiement a échoué"
+          echo "Vérifiez les journaux de déploiement sur Render"
+          # Ne pas faire échouer le workflow pour continuer les étapes suivantes
+          echo "Poursuivi du workflow pour les étapes de monitoring..."
+        fi
         
     - name: Notify Deployment Status
       run: |
-        echo "Application déployée avec succès sur l'environnement de production"
+        echo "Application déployée sur l'environnement de production"
         echo "URL: https://devops-ci-cd.onrender.com"
-
+        echo "Statut: ${{ steps.render-deploy.outcome }}"
+        
   # Phase de monitoring et performance
   performance-monitoring:
     name: Performance Monitoring
