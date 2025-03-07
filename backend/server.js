@@ -5,7 +5,6 @@ const morgan = require('morgan');
 const path = require('path');
 const mongoose = require('mongoose');
 const connectDB = require('./config/db');
-const express = require('express');
 const client = require('prom-client');
 
 // Charger les variables d'environnement
@@ -63,6 +62,55 @@ app.get('/api/health', (req, res) => {
   }
 });
 
+// Prometheus metrics
+// Create a Registry to register the metrics
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+// Create a counter for HTTP requests
+const httpRequestsTotal = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'route', 'status'],
+  registers: [register]
+});
+
+// Create a histogram for request durations
+const httpRequestDurationMicroseconds = new client.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status'],
+  buckets: [0.1, 0.3, 0.5, 0.7, 1, 3, 5, 7, 10],
+  registers: [register]
+});
+
+// Middleware to collect metrics
+app.use((req, res, next) => {
+  const start = process.hrtime();
+  
+  res.on('finish', () => {
+    const route = req.route ? req.route.path : req.path;
+    const method = req.method;
+    const status = res.statusCode;
+    
+    // Increment the request counter
+    httpRequestsTotal.inc({ method, route, status });
+    
+    // Record the request duration
+    const duration = process.hrtime(start);
+    const durationInSeconds = duration[0] + duration[1] / 1e9;
+    httpRequestDurationMicroseconds.observe({ method, route, status }, durationInSeconds);
+  });
+  
+  next();
+});
+
+// Expose metrics endpoint
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
+
 // Servir les fichiers statiques du frontend en production
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'public')));
@@ -103,20 +151,6 @@ process.on('SIGTERM', () => {
       process.exit(0);
     });
   });
-});
-
-
-// Créer des compteurs pour les requêtes
-const httpRequestsTotal = new client.Counter({
-  name: 'http_requests_total',
-  help: 'Total des requêtes HTTP',
-  labelNames: ['method', 'route', 'status']
-});
-
-// Exposer les métriques
-app.get('/metrics', async (req, res) => {
-  res.set('Content-Type', client.register.contentType);
-  res.end(await client.register.metrics());
 });
 
 // Export pour les tests
