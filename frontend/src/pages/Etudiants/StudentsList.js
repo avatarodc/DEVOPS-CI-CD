@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../services/api'; // Importer le service API
 
 const StudentsList = () => {
   const [students, setStudents] = useState([]);
@@ -17,7 +17,8 @@ const StudentsList = () => {
     // Fonction pour récupérer les étudiants
     const fetchStudents = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/etudiants');
+        // Utiliser l'instance api au lieu d'axios avec URL complète
+        const res = await api.get('/etudiants');
         setStudents(res.data);
         setLoading(false);
       } catch (err) {
@@ -40,7 +41,8 @@ const StudentsList = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post('http://localhost:5000/api/etudiants', formData);
+      // Utiliser l'instance api au lieu d'axios avec URL complète
+      const res = await api.post('/etudiants', formData);
       setStudents([...students, res.data]);
       // Réinitialiser le formulaire
       setFormData({
@@ -54,6 +56,7 @@ const StudentsList = () => {
     }
   };
   
+  // Le reste du composant reste inchangé
   if (loading) return <div className="text-center mt-5"><div className="spinner-border" role="status"></div></div>;
   
   return (
