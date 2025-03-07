@@ -623,7 +623,7 @@ jobs:
         echo "version: ${{ github.sha }}" > deployment/version.txt
         echo "deployment_date: $(date)" >> deployment/version.txt
         
-    # Utiliser l'action de déploiement Render avec plus d'options
+    # Utiliser l'action de déploiement Render avec les paramètres valides uniquement
     - name: Deploy to Production Environment
       uses: JorgeLNJunior/render-deploy@v1.4.3
       id: render-deploy
@@ -632,11 +632,9 @@ jobs:
         api_key: ${{ secrets.RENDER_API_KEY }}
         wait_deploy: true
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        retries: 5           # Nombre de tentatives si échec
-        retry_wait: 10       # Attente entre les tentatives (secondes)
-        timeout: 600         # Timeout en secondes (10 minutes)
         
-    # Vérification du statut après déploiement
+        
+    # Vérification du statut après déploiement avec gestion d'erreur améliorée
     - name: Verify Deployment Status
       if: always()
       run: |
@@ -644,18 +642,26 @@ jobs:
           echo "✅ Déploiement réussi sur Render"
           echo "URL: https://devops-ci-cd.onrender.com"
         else
-          echo "❌ Le déploiement a échoué"
-          echo "Vérifiez les journaux de déploiement sur Render"
-          # Ne pas faire échouer le workflow pour continuer les étapes suivantes
+          echo "❌ Le déploiement a échoué mais nous continuons le pipeline"
+          echo "Vérifiez les logs ci-dessus pour plus d'informations"
+          echo "Causes possibles:"
+          echo "- Vérifiez que votre RENDER_SERVICE_ID est correct"
+          echo "- Vérifiez que votre RENDER_API_KEY est valide et a les permissions nécessaires"
+          echo "- Vérifiez la configuration du service sur Render"
           echo "Poursuivi du workflow pour les étapes de monitoring..."
         fi
+        
+    # Attente supplémentaire pour laisser le temps au déploiement de se finaliser
+    - name: Wait for deployment stabilization
+      run: |
+        echo "Attente de 30 secondes pour stabilisation du déploiement..."
+        sleep 30
         
     - name: Notify Deployment Status
       run: |
         echo "Application déployée sur l'environnement de production"
         echo "URL: https://devops-ci-cd.onrender.com"
         echo "Statut: ${{ steps.render-deploy.outcome }}"
-        
   # Phase de monitoring et performance
   performance-monitoring:
     name: Performance Monitoring
