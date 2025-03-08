@@ -7,7 +7,7 @@ on:
     branches: [ main, master, develop ]
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *'  # Une fois par jour au lieu de toutes les heures
+    - cron: '0 0 * * *'  # Une fois par jour
 
 jobs:
   # Combinaison des phases de test et build
@@ -63,7 +63,7 @@ jobs:
           !backend/node_modules
         retention-days: 3
 
-  # Déploiement combiné pour les environnements non-production
+  # Déploiement combiné pour les environnements
   deploy-env:
     name: Deploy to Environment
     needs: test-and-build
@@ -104,31 +104,92 @@ jobs:
           echo "IMAGE_TAG=prod" >> $GITHUB_OUTPUT
         fi
     
-    # Ajouter instrumentation Prometheus pour tous les environnements
+    # Ajouter instrumentation Prometheus - CORRECTION
     - name: Add Prometheus Instrumentation
       run: |
-        if [ ! -f backend/server.js ]; then
-          echo "// Placeholder server file for demo" > backend/server.js
-        fi
+        # Créer le fichier prometheus-metrics.js
+        mkdir -p backend
+        cd backend
+        npm install --save prom-client express
         
-        # Ajouter code pour metrics
-        if ! grep -q "prom-client" backend/server.js; then
-          cat >> backend/server.js <<EOF
+        cat > prometheus-metrics.js << 'EOFMETRICS'
+        // Prometheus metrics
+        const client = require('prom-client');
+        const register = new client.Registry();
+        client.collectDefaultMetrics({ register });
+        
+        // HTTP request counter
+        const httpRequestsTotal = new client.Counter({
+          name: 'http_requests_total',
+          help: 'Total HTTP requests',
+          labelNames: ['method', 'path', 'status']
+        });
+        
+        // Request duration histogram
+        const httpRequestDurationMs = new client.Histogram({
+          name: 'http_request_duration_ms',
+          help: 'HTTP request duration in ms',
+          labelNames: ['method', 'path', 'status'],
+          buckets: [10, 50, 100, 200, 500, 1000, 2000]
+        });
+        
+        // Export the metrics function
+        module.exports = function(app) {
+          // Register metrics
+          register.registerMetric(httpRequestsTotal);
+          register.registerMetric(httpRequestDurationMs);
           
-          // Prometheus metrics
-          const client = require('prom-client');
-          const register = new client.Registry();
-          client.collectDefaultMetrics({ register });
+          // Add middleware to track metrics
+          app.use((req, res, next) => {
+            const start = Date.now();
+            res.on('finish', () => {
+              const duration = Date.now() - start;
+              httpRequestsTotal.inc({ 
+                method: req.method, 
+                path: req.path, 
+                status: res.statusCode 
+              });
+              httpRequestDurationMs.observe({ 
+                method: req.method, 
+                path: req.path, 
+                status: res.statusCode 
+              }, duration);
+            });
+            next();
+          });
           
-          // Expose metrics endpoint 
+          // Expose metrics endpoint
           app.get('/metrics', async (req, res) => {
             res.set('Content-Type', register.contentType);
             res.end(await register.metrics());
           });
-          EOF
-          
-          cd backend
-          npm install --save prom-client
+        };
+        EOFMETRICS
+        
+        # Ajouter l'import au fichier server.js ou le créer s'il n'existe pas
+        if [ ! -f server.js ]; then
+          cat > server.js << 'EOFSERVER'
+        const express = require('express');
+        const app = express();
+        const port = process.env.PORT || 3000;
+        
+        // Import Prometheus metrics
+        const metrics = require('./prometheus-metrics.js');
+        metrics(app);
+        
+        app.get('/', (req, res) => {
+          res.send('Hello World!');
+        });
+        
+        app.listen(port, () => {
+          console.log(`Server running on port ${port}`);
+        });
+        EOFSERVER
+        else
+          # Si le fichier existe, vérifier si on doit ajouter les métriques
+          if ! grep -q "prom-client" server.js && ! grep -q "prometheus-metrics" server.js; then
+            echo -e "\n// Prometheus metrics\nconst metrics = require('./prometheus-metrics.js');\nmetrics(app);" >> server.js
+          fi
         fi
     
     # Build et push de l'image Docker
@@ -150,48 +211,58 @@ jobs:
         if [ "$ENV_NAME" = "production" ]; then
           # Déploiement vers Render pour production
           echo "Simulation de déploiement vers Render..."
-          # Utilisez JorgeLNJunior/render-deploy@v1.4.3 si les secrets sont configurés
         elif [ "$ENV_NAME" = "staging" ]; then
           # Créer un manifest Kubernetes simplifié
           mkdir -p k8s
-          cat > k8s/deployment.yaml <<EOF
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: app-deployment
-          spec:
-            replicas: 2
-            selector:
-              matchLabels:
+          cat > k8s/deployment.yaml << 'EOFK8S'
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: app-deployment
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: gestion-etablissement
+          template:
+            metadata:
+              labels:
                 app: gestion-etablissement
-            template:
-              metadata:
-                labels:
-                  app: gestion-etablissement
-              spec:
-                containers:
-                - name: app
-                  image: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:$IMAGE_TAG-${{ github.sha }}
-                  ports:
-                  - containerPort: 3000
-          EOF
+            spec:
+              containers:
+              - name: app
+                image: ${DOCKERHUB_USERNAME}/gestion-etablissement:${IMAGE_TAG}-${GITHUB_SHA}
+                ports:
+                - containerPort: 3000
+        EOFK8S
+          # Remplacer les variables dans le fichier
+          sed -i "s|\${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g" k8s/deployment.yaml
+          sed -i "s|\${IMAGE_TAG}|$IMAGE_TAG|g" k8s/deployment.yaml
+          sed -i "s|\${GITHUB_SHA}|${{ github.sha }}|g" k8s/deployment.yaml
+          
           echo "Manifest Kubernetes généré pour l'environnement de staging"
         else
           # Pour développement - configuration docker-compose
-          cat > docker-compose.yml <<EOF
-          version: '3'
-          services:
-            app:
-              image: ${{ secrets.DOCKERHUB_USERNAME }}/gestion-etablissement:$IMAGE_TAG-${{ github.sha }}
-              ports:
-                - "3000:3000"
-              environment:
-                - NODE_ENV=$ENV_NAME
-            db:
-              image: mongo:latest
-              ports:
-                - "27017:27017"
-          EOF
+          cat > docker-compose.yml << 'EOFDOCKER'
+        version: '3'
+        services:
+          app:
+            image: ${DOCKERHUB_USERNAME}/gestion-etablissement:${IMAGE_TAG}-${GITHUB_SHA}
+            ports:
+              - "3000:3000"
+            environment:
+              - NODE_ENV=${ENV_NAME}
+          db:
+            image: mongo:latest
+            ports:
+              - "27017:27017"
+        EOFDOCKER
+          # Remplacer les variables dans le fichier
+          sed -i "s|\${DOCKERHUB_USERNAME}|${{ secrets.DOCKERHUB_USERNAME }}|g" docker-compose.yml
+          sed -i "s|\${IMAGE_TAG}|$IMAGE_TAG|g" docker-compose.yml
+          sed -i "s|\${GITHUB_SHA}|${{ github.sha }}|g" docker-compose.yml
+          sed -i "s|\${ENV_NAME}|$ENV_NAME|g" docker-compose.yml
+          
           echo "Configuration docker-compose générée pour l'environnement $ENV_NAME"
         fi
         
@@ -213,17 +284,20 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     
     steps:
-    - name: Performance Check
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Basic Performance Check
       run: |
         echo "Exécution de tests de performance basiques..."
         curl -s https://devops-ci-cd.onrender.com || echo "Site non accessible, vérifiez manuellement"
         
-    - name: Generate Basic Monitoring Configuration
+    - name: Create Monitoring Configuration
       run: |
         mkdir -p monitoring
         
         # Configuration simplifiée pour Prometheus
-        cat > monitoring/prometheus.yml <<EOF
+        cat > monitoring/prometheus.yml << 'EOFPROM'
         global:
           scrape_interval: 15s
         
@@ -237,10 +311,10 @@ jobs:
               - targets: ['devops-ci-cd.onrender.com']
             metrics_path: '/metrics'
             scheme: https
-        EOF
+        EOFPROM
         
         # Docker-compose minimal pour Prometheus et Grafana
-        cat > monitoring/docker-compose.yml <<EOF
+        cat > monitoring/docker-compose.yml << 'EOFDC'
         version: '3'
         
         services:
@@ -260,7 +334,7 @@ jobs:
             environment:
               - GF_SECURITY_ADMIN_USER=admin
               - GF_SECURITY_ADMIN_PASSWORD=admin
-        EOF
+        EOFDC
         
     - name: Upload monitoring config
       uses: actions/upload-artifact@v4
