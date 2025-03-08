@@ -3,40 +3,50 @@ version: '3'
 services:
   prometheus:
     image: prom/prometheus
-    ports:
-      - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    networks:
-      - monitoring
+    ports:
+      - "9090:9090"
+    network_mode: "host"  # Utilisation du réseau host pour accéder à Minikube
     restart: always
-  
+
   grafana:
     image: grafana/grafana
     depends_on:
       - prometheus
     ports:
-      - "3100:3000"
+      - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     volumes:
       - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
     networks:
-      - monitoring
+      - monitoring-network
     restart: always
-  
+
   node-exporter:
     image: prom/node-exporter
     ports:
       - "9100:9100"
     networks:
-      - monitoring
+      - monitoring-network
+    restart: always
+
+  loki:
+    image: grafana/loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - monitoring-network
     restart: always
 
 networks:
-  monitoring:
+  monitoring-network:
 
 volumes:
   grafana-storage:
