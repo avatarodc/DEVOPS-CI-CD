@@ -357,80 +357,79 @@ jobs:
         cd backend
         npm install --save prom-client
     
-    - name: Add Prometheus Instrumentation
-      run: |
-        # Vérifier si l'instrumentation est déjà présente
-        if ! grep -q "prom-client" backend/server.js; then
-          # Ajout de l'instrumentation Prometheus au backend
-          cat >> backend/server.js <<EOF
-          
-          // Prometheus metrics
-          const client = require('prom-client');
-          
-          // Create a Registry to register the metrics
-          const register = new client.Registry();
-          client.collectDefaultMetrics({ register });
-          
-          // Create a counter for HTTP requests
-          const httpRequestsTotal = new client.Counter({
-            name: 'http_requests_total',
-            help: 'Total number of HTTP requests',
-            labelNames: ['method', 'route', 'status'],
-            registers: [register]
-          });
-          
-          // Create a histogram for request durations
-          const httpRequestDurationMicroseconds = new client.Histogram({
-            name: 'http_request_duration_seconds',
-            help: 'Duration of HTTP requests in seconds',
-            labelNames: ['method', 'route', 'status'],
-            buckets: [0.1, 0.3, 0.5, 0.7, 1, 3, 5, 7, 10],
-            registers: [register]
-          });
-          
-          // Middleware to collect metrics
-          app.use((req, res, next) => {
-            const start = process.hrtime();
+        - name: Add Prometheus Instrumentation
+        run: |
+          # Vérifier si l'instrumentation est déjà présente
+          if ! grep -q "prom-client" backend/server.js; then
+            # Ajout de l'instrumentation Prometheus au backend
+            cat << 'EOF' >> backend/server.js
             
-            res.on('finish', () => {
-              const route = req.route ? req.route.path : req.path;
-              const method = req.method;
-              const status = res.statusCode;
-              
-              // Increment the request counter
-              httpRequestsTotal.inc({ method, route, status });
-              
-              // Record the request duration
-              const duration = process.hrtime(start);
-              const durationInSeconds = duration[0] + duration[1] / 1e9;
-              httpRequestDurationMicroseconds.observe({ method, route, status }, durationInSeconds);
+            // Prometheus metrics
+            const client = require('prom-client');
+            
+            // Create a Registry to register the metrics
+            const register = new client.Registry();
+            client.collectDefaultMetrics({ register });
+            
+            // Create a counter for HTTP requests
+            const httpRequestsTotal = new client.Counter({
+              name: 'http_requests_total',
+              help: 'Total number of HTTP requests',
+              labelNames: ['method', 'route', 'status'],
+              registers: [register]
             });
             
-            next();
-          });
-          
-          // Expose metrics endpoint
-          app.get('/metrics', async (req, res) => {
-            res.set('Content-Type', register.contentType);
-            res.end(await register.metrics());
-          });
-          EOF
-        fi
-        
-        # Ajout/mise à jour de la route health check pour s'assurer qu'elle renvoie toujours 200
-        if ! grep -q "app.get('/api/health'" backend/server.js || grep -q "status: 'warning'" backend/server.js; then
-          # Remplacer une route existante ou ajouter une nouvelle
-          cat >> backend/server.js <<EOF
-          
-          // Route de health check simplifiée pour Kubernetes
-          app.get('/api/health', (req, res) => {
-            return res.status(200).json({ 
-              status: 'ok', 
-              message: 'API is running' 
+            // Create a histogram for request durations
+            const httpRequestDurationMicroseconds = new client.Histogram({
+              name: 'http_request_duration_seconds',
+              help: 'Duration of HTTP requests in seconds',
+              labelNames: ['method', 'route', 'status'],
+              buckets: [0.1, 0.3, 0.5, 0.7, 1, 3, 5, 7, 10],
+              registers: [register]
             });
-          });
-          EOF
-        fi
+            
+            // Middleware to collect metrics
+            app.use((req, res, next) => {
+              const start = process.hrtime();
+              
+              res.on('finish', () => {
+                const route = req.route ? req.route.path : req.path;
+                const method = req.method;
+                const status = res.statusCode;
+                
+                // Increment the request counter
+                httpRequestsTotal.inc({ method, route, status });
+                
+                // Record the request duration
+                const duration = process.hrtime(start);
+                const durationInSeconds = duration[0] + duration[1] / 1e9;
+                httpRequestDurationMicroseconds.observe({ method, route, status }, durationInSeconds);
+              });
+              
+              next();
+            });
+            
+            // Expose metrics endpoint
+            app.get('/metrics', async (req, res) => {
+              res.set('Content-Type', register.contentType);
+              res.end(await register.metrics());
+            });
+            EOF
+          fi
+          
+          # Ajout/mise à jour de la route health check
+          if ! grep -q "app.get('/api/health'" backend/server.js || grep -q "status: 'warning'" backend/server.js; then
+            cat << 'EOF' >> backend/server.js
+            
+            // Route de health check simplifiée pour Kubernetes
+            app.get('/api/health', (req, res) => {
+              return res.status(200).json({ 
+                status: 'ok', 
+                message: 'API is running' 
+              });
+            });
+            EOF
+          fi
     
     # Build de l'application instrumentée
     - name: Build instrumented application
