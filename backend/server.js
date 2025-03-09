@@ -64,7 +64,7 @@ app.get('/api/test', (req, res) => {
 */
 
 app.get('/api/health', (req, res) => {
-  // Retourne toujours OK pour les vérifications de Kubernetes
+  // Retourne toujours OK pour les vérifications de Kubernetes si tout va bien
   return res.status(200).json({ 
     status: 'ok', 
     message: 'API is running' 
