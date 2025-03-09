@@ -1,24 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import { 
+  getStudents, 
+  deleteStudent 
+} from '../../services/api';
 
 const StudentsList = () => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
   
-  // État pour le formulaire
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: ''
-  });
-  
+  // Charger la liste des étudiants
   useEffect(() => {
-    // Fonction pour récupérer les étudiants
     const fetchStudents = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/etudiants');
-        setStudents(res.data);
+        const response = await getStudents();
+        setStudents(response.data);
         setLoading(false);
       } catch (err) {
         setError('Erreur lors de la récupération des données');
@@ -30,118 +28,102 @@ const StudentsList = () => {
     fetchStudents();
   }, []);
   
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
-  };
-  
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await axios.post('http://localhost:5000/api/etudiants', formData);
-      setStudents([...students, res.data]);
-      // Réinitialiser le formulaire
-      setFormData({
-        firstName: '',
-        lastName: '',
-        email: ''
-      });
-    } catch (err) {
-      console.error(err);
-      setError('Erreur lors de l\'ajout de l\'étudiant');
+  // Supprimer un étudiant
+  const handleDelete = async (id) => {
+    const confirmDelete = window.confirm('Êtes-vous sûr de vouloir supprimer cet étudiant ?');
+    if (confirmDelete) {
+      try {
+        await deleteStudent(id);
+        // Mettre à jour la liste des étudiants après suppression
+        setStudents(students.filter(student => student._id !== id));
+      } catch (err) {
+        console.error('Erreur lors de la suppression', err);
+        setError('Erreur lors de la suppression de l\'étudiant');
+      }
     }
   };
+
+  // Naviguer vers le formulaire de modification
+  const handleEdit = (id) => {
+    navigate(`/etudiants/modifier/${id}`);
+  };
+
+  // Naviguer vers le formulaire d'ajout
+  const handleAddNew = () => {
+    navigate('/etudiants/nouveau');
+  };
   
-  if (loading) return <div className="text-center mt-5"><div className="spinner-border" role="status"></div></div>;
+  // Affichage de chargement
+  if (loading) return (
+    <div className="text-center mt-5">
+      <div className="spinner-border" role="status">
+        <span className="visually-hidden">Chargement...</span>
+      </div>
+    </div>
+  );
   
   return (
-    <div>
-      <h2 className="mb-4">Gestion des Étudiants</h2>
-      
-      {error && <div className="alert alert-danger">{error}</div>}
-      
-      {/* Formulaire d'ajout */}
-      <div className="card mb-4">
-        <div className="card-header">
-          Ajouter un étudiant
+    <div className="container">
+      <div className="row mb-3 align-items-center">
+        <div className="col">
+          <h2 className="mb-0">Gestion des Étudiants</h2>
         </div>
-        <div className="card-body">
-          <form onSubmit={handleSubmit}>
-            <div className="mb-3">
-              <label htmlFor="firstName" className="form-label">Prénom</label>
-              <input
-                type="text"
-                className="form-control"
-                id="firstName"
-                name="firstName"
-                value={formData.firstName}
-                onChange={handleChange}
-                required
-              />
-            </div>
-            <div className="mb-3">
-              <label htmlFor="lastName" className="form-label">Nom</label>
-              <input
-                type="text"
-                className="form-control"
-                id="lastName"
-                name="lastName"
-                value={formData.lastName}
-                onChange={handleChange}
-                required
-              />
-            </div>
-            <div className="mb-3">
-              <label htmlFor="email" className="form-label">Email</label>
-              <input
-                type="email"
-                className="form-control"
-                id="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                required
-              />
-            </div>
-            <button type="submit" className="btn btn-primary">Ajouter</button>
-          </form>
+        <div className="col-auto">
+          <button 
+            className="btn btn-primary" 
+            onClick={handleAddNew}
+          >
+            Ajouter un étudiant
+          </button>
         </div>
       </div>
       
+      {/* Affichage des erreurs */}
+      {error && <div className="alert alert-danger">{error}</div>}
+      
       {/* Liste des étudiants */}
       <div className="card">
-        <div className="card-header">
-          Liste des étudiants
-        </div>
         <div className="card-body">
           {students.length === 0 ? (
             <p className="text-center">Aucun étudiant enregistré</p>
           ) : (
-            <table className="table table-striped">
-              <thead>
-                <tr>
-                  <th>Prénom</th>
-                  <th>Nom</th>
-                  <th>Email</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {students.map(student => (
-                  <tr key={student._id}>
-                    <td>{student.firstName}</td>
-                    <td>{student.lastName}</td>
-                    <td>{student.email}</td>
-                    <td>
-                      <button className="btn btn-sm btn-info me-2">Modifier</button>
-                      <button className="btn btn-sm btn-danger">Supprimer</button>
-                    </td>
+            <div className="table-responsive">
+              <table className="table table-striped table-hover">
+                <thead>
+                  <tr>
+                    <th>Prénom</th>
+                    <th>Nom</th>
+                    <th>Email</th>
+                    <th>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {students.map(student => (
+                    <tr key={student._id}>
+                      <td>{student.firstName}</td>
+                      <td>{student.lastName}</td>
+                      <td>{student.email}</td>
+                      <td>
+                        <div className="btn-group" role="group">
+                          <button 
+                            className="btn btn-sm btn-info" 
+                            onClick={() => handleEdit(student._id)}
+                          >
+                            Modifier
+                          </button>
+                          <button 
+                            className="btn btn-sm btn-danger" 
+                            onClick={() => handleDelete(student._id)}
+                          >
+                            Supprimer
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
