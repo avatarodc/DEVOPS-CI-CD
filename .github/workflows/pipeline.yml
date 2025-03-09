@@ -7,7 +7,7 @@ on:
     branches: [ main, master, develop ]
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'  # Toutes les heures
+    - cron: '0 * * * *'  
 
 jobs:
   # Phase de tests et qualité
