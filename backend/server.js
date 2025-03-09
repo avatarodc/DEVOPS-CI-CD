@@ -4,8 +4,8 @@ const dotenv = require('dotenv');
 const morgan = require('morgan');
 const path = require('path');
 const mongoose = require('mongoose');
-const connectDB = require('./config/db');
 const client = require('prom-client');
+const healthRoutes = require('./routes/healthRoutes');
 
 // Charger les variables d'environnement
 dotenv.config();
@@ -21,62 +21,36 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
-// Connexion à MongoDB (garder la méthode existante)
+// Connexion à MongoDB
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/gestion_etablissement')
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// Routes
+// Importer les routes
 const etudiantsRoutes = require('./routes/etudiantsRoutes');
+const coursRoutes = require('./routes/coursRoutes');
+const professeurRoutes = require('./routes/professeurRoutes');
+const scheduleRoutes = require('./routes/scheduleRoutes');
+const classRoutes = require('./routes/classRoutes');
 
 // Routes API
 app.use('/api/etudiants', etudiantsRoutes);
+app.use('/api/cours', coursRoutes);
+app.use('/api/professeurs', professeurRoutes);
+app.use('/api/schedules', scheduleRoutes);
+app.use('/api/classes', classRoutes);
 
 // Route de test
 app.get('/api/test', (req, res) => {
   res.json({ message: 'API fonctionne correctement' });
 });
 
-// Route de health check pour les conteneurs Docker
-/*app.get('/api/health', (req, res) => {
-  const dbState = mongoose.connection.readyState;
-  const dbStatus = {
-    0: 'disconnected',
-    1: 'connected',
-    2: 'connecting',
-    3: 'disconnecting'
-  };
-  
-  if (dbState === 1) {
-    return res.status(200).json({ 
-      status: 'ok', 
-      message: 'API is running', 
-      dbStatus: dbStatus[dbState] 
-    });
-  } else {
-    return res.status(503).json({ 
-      status: 'warning', 
-      message: 'Database connection issue', 
-      dbStatus: dbStatus[dbState] 
-    });
-  }
-});
-*/
+app.use('/api/health', healthRoutes);
 
-app.get('/api/health', (req, res) => {
-  // Retourne toujours OK pour les vérifications de Kubernetes si tout va bien
-  return res.status(200).json({ 
-    status: 'ok', 
-    message: 'API is running' 
-  });
-});
-
-// Prometheus metrics
-// Create a Registry to register the metrics
+// Prometheus metrics (reste inchangé de votre fichier original)
 const register = new client.Registry();
 client.collectDefaultMetrics({ register });
 
-// Create a counter for HTTP requests
 const httpRequestsTotal = new client.Counter({
   name: 'http_requests_total',
   help: 'Total number of HTTP requests',
@@ -84,7 +58,6 @@ const httpRequestsTotal = new client.Counter({
   registers: [register]
 });
 
-// Create a histogram for request durations
 const httpRequestDurationMicroseconds = new client.Histogram({
   name: 'http_request_duration_seconds',
   help: 'Duration of HTTP requests in seconds',
@@ -93,7 +66,7 @@ const httpRequestDurationMicroseconds = new client.Histogram({
   registers: [register]
 });
 
-// Middleware to collect metrics
+// Middleware pour collecter les métriques
 app.use((req, res, next) => {
   const start = process.hrtime();
   
@@ -102,10 +75,8 @@ app.use((req, res, next) => {
     const method = req.method;
     const status = res.statusCode;
     
-    // Increment the request counter
     httpRequestsTotal.inc({ method, route, status });
     
-    // Record the request duration
     const duration = process.hrtime(start);
     const durationInSeconds = duration[0] + duration[1] / 1e9;
     httpRequestDurationMicroseconds.observe({ method, route, status }, durationInSeconds);
@@ -114,7 +85,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Expose metrics endpoint
+// Endpoint des métriques Prometheus
 app.get('/metrics', async (req, res) => {
   res.set('Content-Type', register.contentType);
   res.end(await register.metrics());
