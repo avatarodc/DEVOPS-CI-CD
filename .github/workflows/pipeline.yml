@@ -3,11 +3,6 @@ name: CI/CD Pipeline with Monitoring
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-  schedule:
-    - cron: '0 * * * *'  # Toutes les heures
 
 jobs:
   # Phase de tests et qualité
